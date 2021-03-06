@@ -5,13 +5,6 @@ This code demonstrates how to use dedupe with a comma separated values
 (CSV) file. All operations are performed in memory, so will run very
 quickly on datasets up to ~10,000 rows.
 
-We start with a CSV file containing our messy data. In this example,
-it is listings of early childhood education centers in Chicago
-compiled from several different sources.
-
-The output will be a CSV with our clustered results.
-
-For larger datasets, see our [mysql_example](mysql_example.html)
 """
 
 import os
@@ -21,6 +14,7 @@ import re
 import logging
 import argparse
 from argparse import RawTextHelpFormatter
+from io import StringIO
 
 import dedupe
 from unidecode import unidecode
@@ -57,8 +51,7 @@ def preProcess(column):
 
 def readData(args):
 	"""
-	Read in our data from a CSV file and create a dictionary of records,
-	where the key is a unique record ID and each value is dict
+	Read in our data
 	"""
 	data_d = {}
 	with open(args.infile) as f:
@@ -71,12 +64,6 @@ def readData(args):
 
 if __name__ == '__main__':
 
-	# ## Logging
-
-	# Dedupe uses Python logging to show or suppress verbose output. This
-	# code block lets you change the level of loggin on the command
-	# line. You don't need it if you don't want that. To enable verbose
-	# logging, run `python examples/csv_example/csv_example.py -v`
 	usage = 'dedupe.py [-opt1, [-opt2, ...]] infile'
 	parser = argparse.ArgumentParser(description='', formatter_class=RawTextHelpFormatter, usage=usage)
 	parser.add_argument('infile', type=is_valid_file, help='input file in fasta format')
@@ -87,43 +74,36 @@ if __name__ == '__main__':
 
 	'''
 	(opts, args) = optp.parse_args()
-	log_level = logging.WARNING
 	if opts.verbose:
 		if opts.verbose == 1:
 			log_level = logging.INFO
 		elif opts.verbose >= 2:
 			log_level = logging.DEBUG
-	logging.getLogger().setLevel(log_level)
 	'''
+	log_level = logging.WARNING
+	logging.getLogger().setLevel(log_level)
 	# ## Setup
 
-	settings_file = args.infile + .'learned'
-	training_file = args.infile + ".training"
+	settings_file = args.infile + '.learn'
+	training_file = args.infile + '.train'
 
 	args.idmapper = IDmapper()
 	
 	print('importing data ...')
 	data_d = readData(args)
 
-	# If a settings file already exists, we'll just load that and skip training
 	if os.path.exists(settings_file):
+		# If a settings file already exists, we'll just load that and skip training
 		print('reading from', settings_file)
 		with open(settings_file, 'rb') as f:
 			deduper = dedupe.StaticDedupe(f)
 	else:
 		# ## Training
-
-		# Define the fields dedupe will pay attention to
 		fields = [
 			{'field': 'function', 'type': 'String'}
 			]
 
-		# Create a new deduper object and pass our data model to it.
 		deduper = dedupe.Dedupe(fields)
-
-		# If we have training data saved from a previous run of dedupe,
-		# look for it and load it in.
-		# __Note:__ if you want to train from scratch, delete the training_file
 		if os.path.exists(training_file):
 			print('reading labeled examples from ', training_file)
 			with open(training_file, 'rb') as f:
@@ -132,26 +112,15 @@ if __name__ == '__main__':
 			deduper.prepare_training(data_d)
 
 		# ## Active learning
-		# Dedupe will find the next pair of records
-		# it is least certain about and ask you to label them as duplicates
-		# or not.
-		# use 'y', 'n' and 'u' keys to flag duplicates
-		# press 'f' when you are finished
 		print('starting active labeling...')
-
 		dedupe.console_label(deduper)
-
-		# Using the examples we just labeled, train the deduper and learn
-		# blocking predicates
 		deduper.train()
 
 		# When finished, save our training to disk
 		with open(training_file, 'w') as tf:
 			deduper.write_training(tf)
 
-		# Save our weights and predicates to disk.  If the settings file
-		# exists, we will skip all the training and learning next time we run
-		# this file.
+		# Save our weights and predicates to disk
 		with open(settings_file, 'wb') as sf:
 			deduper.write_settings(sf)
 
@@ -160,25 +129,40 @@ if __name__ == '__main__':
 	# `partition` will return sets of records that dedupe
 	# believes are all referring to the same entity.
 
+
 	print('clustering...')
 	clustered_dupes = deduper.partition(data_d, 0.5)
 
 	#print(clustered_dupes)
-	print('# duplicate sets', len(clustered_dupes))
+	#print('# duplicate sets', len(clustered_dupes))
 
 	# ## Writing Results
 
 	# Write our original data back out to a CSV with a new column called
 	# 'Cluster ID' which indicates which records refer to each other.
 
+
+
 	cluster_membership = {}
 	for cluster_id, (records, scores) in enumerate(clustered_dupes):
+		cluster_d = [data_d[c] for c in records]
+		canonical_rep = dedupe.canonicalize(cluster_d)
 		for record_id, score in zip(records, scores):
-			cluster_membership[record_id] = (cluster_id, score)
+			#cluster_membership[record_id] = (cluster_id, score)
+			cluster_membership[record_id] = {
+            "cluster id" : cluster_id,
+            "canonical representation" : canonical_rep,
+            "confidence": score
+			}
 
-	print(cluster_membership)
-	#print(cluster_membership)
-	fieldnames = ['Cluster ID', 'confidence_score', 'id', 'function']
+	for key,value in data_d.items():
+		args.outfile.write(value['id'])
+		args.outfile.write('\t')
+		args.outfile.write(cluster_membership[key]['canonical representation']['function'])
+		args.outfile.write('\n')
+
+	'''
+	# use data_d here
 	with open(args.infile) as fp:
 		for line in fp:
 			cols = line.split('\t')
@@ -189,7 +173,7 @@ if __name__ == '__main__':
 			args.outfile.write( str(membership[1])[:4] )
 			args.outfile.write( "\t" )
 			args.outfile.write(line)
-
+	'''
 
 
 
