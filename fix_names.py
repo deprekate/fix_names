@@ -39,10 +39,40 @@ def preProcess(column):
 	Do a little bit of data cleaning with the help of Unidecode and Regex.
 	Things like casing, extra spaces, quotes and new lines can be ignored.
 	"""
-	column = unidecode(column)
+	column = unidecode(column).lower()
+	# gene function related regex
+	if 'hypothetical' in column or 'unknown' in column:
+		column = 'hypothetical'
+	# TO DROP
+	column = column.replace('similar to ','')
+	column = column.replace('bacteriophage-','')
+	column = column.replace('bacteriophage','')
+	column = column.replace('phage-','')
+	column = column.replace('phage','')
+	column = column.replace('associated','')
+	column = column.replace('aquired','')
+	column = column.replace('domain containing','')
+	column = column.replace('domain-containing','')
+	column = column.replace('domain','')
+	column = column.replace('conserved','')
+	column = column.replace('predicted','')
+	column = column.replace('putative','')
+	column = column.replace('protein','')
+	column = column.replace('homolog','')
+	column = column.replace('analog','')
+	column = column.replace('-like','')
+	column = column.replace(' like','')
+	# TO REPLACE
+	column = column.replace('base plate','baseplate')
+
+	# OTHER
+	column = re.sub(r'\bgp\d+', ' ', column)
+	column = re.sub(r'\borf\d+', ' ', column)
+	column = re.sub(r'\borf \d+', ' ', column)
+
 	column = re.sub('  +', ' ', column)
 	column = re.sub('\n', ' ', column)
-	column = column.strip().strip('"').strip("'").lower().strip()
+	column = column.strip().strip('"').strip("'").strip()
 	# If data is missing, indicate that by setting the value to `None`
 	if not column:
 		column = None
